@@ -51,3 +51,13 @@ class ExceptionsProgram:
                     return min(value, key=len)
                 except:
                     pass
+
+    @staticmethod
+    def check_news(text):
+        text = re.sub('^(اخبار ساعت|خبر ساعت|خبرساعت|اخبارساعت|اخبار|خبر)', 'خبر', text)
+        text = re.sub('00:00', '0', text)
+        if re.search('^(اخبار| خبر)(.*?)(ساعت)', text):
+            text = re.sub('ساعت', '', text)
+        if re.search('^(اخبار|خبر)(.*?)(:00)', text):
+            text = re.sub(':00', '', text)
+        return text

@@ -9,23 +9,32 @@ from data_similarity_code import SimilarityVector
 from data_substitution_code import SubstitutionText
 from data_vectorization_code import VectorizeText
 from exceptions_program_code import ExceptionsProgram
-from num2fawords import words, ordinal_words
+from num2fawords import words
+
 
 def executive_clean(main_file, target_channel, fa_target_channel, en_target_channel, target_month):
     df = pd.read_csv('{}'.format(main_file), index_col=False)
     filter_df = df[df['نام شبکه'] == '{}'.format(target_channel)]
     filter_df = filter_df[filter_df['ردیف'] == target_month]
+
     # filter_df = pd.read_excel(r'F:\sourcecode\CleanEpg\check19.xlsx', index_col=False)
     # model= SentenceTransformer(r'F:\sourcecode\CleanEpg\all-mpnet-base-v2')
     model = SentenceTransformer('F:\sourcecode\CleanEpg\distilbert-base-nli-mean-tokens')
-    column_name = 'نام برنامه اولیه'
+
+    init_column_name = 'نام برنامه اولیه'
+    column_name = 'نام برنامه ورودی'
     column_hour = 'ساعت'
     column_opt = 'اپراتور'
     number_of_repetitions = 3
     High_limit_sim = 1.05
     low_limit_sim = 0.9
     low_limit_intersection_sim = 0.25
+
     channel_name = '{x}'.format(x=fa_target_channel)
+
+    init_list = list(map(lambda x: ExceptionsProgram.check_news(x), filter_df[init_column_name]))
+    filter_df[column_name] = init_list
+
     tk = Tokenizer()
 
     stp_wrd_df = pd.read_excel('stop_word2.xlsx', index_col=False)
@@ -35,7 +44,7 @@ def executive_clean(main_file, target_channel, fa_target_channel, en_target_chan
         for item in item_name:
             f.write(item + '\n')
 
-    for i in range(0,number_of_repetitions):
+    for i in range(0, number_of_repetitions):
         call_main_clean = MainClean(filter_df, column_name)
         # call_main_clean = MainClean(filter_df, 'cls2' )
         # call_spell_check = call_main_clean.spell_check()
@@ -53,43 +62,57 @@ def executive_clean(main_file, target_channel, fa_target_channel, en_target_chan
         get_output_show = call_main_clean.output_show()
 
         get_output_show_count = Counter(get_output_show)
-        get_output_show_kw = list(map(lambda x: MainClean.check_repeat_sentence(x, get_output_show_count, get_output_show), get_output_show))
+        get_output_show_kw = list(
+            map(lambda x: MainClean.check_repeat_sentence(x, get_output_show_count, get_output_show), get_output_show))
         get_count_name = MainClean.count_name(get_output_show_kw)
         tokenize_output_show = list(map(lambda x: tk.tokenize_words(x), get_output_show_kw))
-        get_check_repeat = list(map(lambda x: MainClean.check_repeat(x, get_count_name, 0.1/(i+1)), tokenize_output_show))
+        get_check_repeat = list(
+            map(lambda x: MainClean.check_repeat(x, get_count_name, 0.1 / (i + 1)), tokenize_output_show))
 
         get_check_repeat = list(
-            map(lambda x: x[0] if x[0] else x[1], zip(get_check_repeat, filter_df['نام برنامه اولیه'].tolist())))
+            map(lambda x: x[0] if x[0] else x[1], zip(get_check_repeat, filter_df[column_name].tolist())))
 
         call_vectorize_text = VectorizeText(get_check_repeat, model)
         get_encoder_text = call_vectorize_text.bert_encoder_text()
 
         call_similarity_vector = SimilarityVector(get_encoder_text)
         get_cosine_sim = call_similarity_vector.cosine_sim()
-        get_value_filter = list(map(lambda x: SimilarityVector.value_filter(low_limit_sim, High_limit_sim, x, get_output_show), get_cosine_sim))
-        get_jaccard_sim = list(map(lambda x: list(map(lambda y: SimilarityVector.jaccard_set(y[1], x[-1][1]), x)), get_value_filter))
-        get_best_choice = list(map(lambda x: SimilarityVector.check_intersection(x[0], x[1], low_limit_intersection_sim), zip(get_jaccard_sim, get_value_filter)))
+        get_value_filter = list(
+            map(lambda x: SimilarityVector.value_filter(low_limit_sim, High_limit_sim, x, get_output_show)
+                , get_cosine_sim))
+
+        get_value_filter = list(
+            map(lambda x: list(filter(lambda y: y[0] > 0.99, x)) if re.search('^اخبار|خبر', x[-1][1]) else x,
+                get_value_filter))
+
+        get_jaccard_sim = list(
+            map(lambda x: list(map(lambda y: SimilarityVector.jaccard_set(y[1], x[-1][1]), x)), get_value_filter))
+
+        get_best_choice = list(
+            map(lambda x: SimilarityVector.check_intersection(x[0], x[1], low_limit_intersection_sim),
+                zip(get_jaccard_sim, get_value_filter)))
 
         call_substitution_text = SubstitutionText(get_output_show, get_best_choice)
         get_recom_list = call_substitution_text.substitution()
-        filter_df['get_recom_list']=get_recom_list
+        filter_df['get_recom_list'] = get_recom_list
         column_name = 'get_recom_list'
 
-    column_name = 'نام برنامه اولیه'
-    call_exceptions_program = ExceptionsProgram(filter_df, column_name, column_hour, column_opt)
-    get_news = call_exceptions_program.news()
-    # print(get_news)
-    # get_news = set(get_news)
-    get_news_dict = list(map(lambda x: {str(x[1]):str(x[0])}, get_news))
-    get_news_dict = ExceptionsProgram.create_dict(get_news_dict)
-    get_news_list = filter_df['نام برنامه اولیه'].apply(lambda x: ExceptionsProgram.check_pattern(x, get_news_dict,'خبر|اخبار'))
+    # column_name = 'نام برنامه اولیه'
+    # call_exceptions_program = ExceptionsProgram(filter_df, column_name, column_hour, column_opt)
+    # get_news = call_exceptions_program.news()
+    # # print(get_news)
+    # # get_news = set(get_news)
+    # get_news_dict = list(map(lambda x: {str(x[1]): str(x[0])}, get_news))
+    # get_news_dict = ExceptionsProgram.create_dict(get_news_dict)
+    # get_news_list = filter_df['نام برنامه اولیه'].apply(
+    #     lambda x: ExceptionsProgram.check_pattern(x, get_news_dict, 'خبر|اخبار'))
+    #
+    # final_value = list(map(lambda x: x[0] if x[0] else x[1], zip(get_news_list, get_recom_list)))
+    # final_value = list(
+    #     map(lambda x: x[0] if x[0] else x[1], zip(final_value, filter_df['نام برنامه اولیه'].tolist())))
+    final_value = get_recom_list
 
-
-    final_value = list(map(lambda x: x[0] if x[0] else x[1], zip(get_news_list, get_recom_list)))
-    final_value = list(
-        map(lambda x: x[0] if x[0] else x[1], zip(final_value, filter_df['نام برنامه اولیه'].tolist())))
-
-    filter_df['final_value']=final_value
+    filter_df['final_value'] = final_value
     filter_df['get_value_filter'] = get_value_filter
     filter_df['get_jaccard_sim'] = get_jaccard_sim
     filter_df['get_check_repeat'] = get_check_repeat
@@ -99,18 +122,19 @@ def executive_clean(main_file, target_channel, fa_target_channel, en_target_chan
 if __name__ == "__main__":
     # df_tmp = pd.read_csv(r'F:\tmp\sarasari_1.csv', index_col= False)
     # set_ch_name = set(df_tmp['نام شبکه'])
-    set_ch_name = {'شبکه 3','شبکه 1'}
-    # set_ch_name = {'تماشا'}
-    i=0
+    # set_ch_name = {'خبر'}
+    set_ch_name = {'شبکه 1', 'شبکه 3'}
+    i = 0
     threads = []
     for ch_name in set_ch_name:
         print(ch_name)
         try:
-            fa_ch_name = lambda x: ' '.join([x.split(' ')[0], words(re.findall('\d', x)[0])])
+            cnv_ch_name = lambda x: ' '.join([x.split(' ')[0], words(re.findall('\d', x)[0])])
+            fa_ch_name = cnv_ch_name(ch_name)
         except IndexError:
             fa_ch_name = 'شبکه' + ' ' + ch_name
 
-        i = i+1
+        i = i + 1
         # i = 41
         t1 = Thread(target=executive_clean, args=(r'F:\tmp\sarasari_1.csv', ch_name, fa_ch_name, 'Ch{}'.format(i), 42))
         t1.start()
